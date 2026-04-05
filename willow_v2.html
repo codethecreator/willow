@@ -337,8 +337,8 @@
 ════════════════════════════════════════════════════════════════════════════ -->
 <script>
 const CONFIG = {
-  ANTHROPIC_API_KEY:   "YOUR_ANTHROPIC_API_KEY_HERE",
-  ELEVENLABS_API_KEY:  "YOUR_ELEVENLABS_API_KEY_HERE",
+  ANTHROPIC_API_KEY:   "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",
+  ELEVENLABS_API_KEY:  "sk_627deb02042dfa8e9d4c16261f890e11b131e8eb4ab00126",
   ELEVENLABS_VOICE_ID: "E4IXevHtHpKGh0bvrPPr",
   RESIDENT_NAME:       "Margaret",
   WAKE_WORDS:          ["willow", "willo", "milo", "billow"],
@@ -575,8 +575,13 @@ function listenForSpeech() {
     orb.className = 'orb active';
     waveEl.classList.add('hidden');
     setPill('');
-    if (e.error !== 'no-speech') notify('Could not hear that. Try again.');
-    else if (sessionActive && !isSpeaking) listenForSpeech();
+    if (e.error === 'no-speech') {
+      if (sessionActive && !isSpeaking) {
+        setTimeout(listenForSpeech, 2000);
+      }
+    } else {
+      notify('Could not hear that. Try again.');
+    }
   };
 
   talkRecog.onend = () => {
