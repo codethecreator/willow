@@ -13,6 +13,19 @@ jobs:
       - uses: actions/checkout@v4
       - name: Configure
         run: cmake -S LunarField_VST3 -B LunarField_VST3/build -G "Visual Studio 17 2022" -A x64
+      - name: Build DSP tests
+        run: cmake --build LunarField_VST3/build --config Release --target LunarField_EngineTests
+      - name: Run DSP tests and render demo WAVs
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path LunarField_VST3/build/demos | Out-Null
+          & "LunarField_VST3/build/Release/LunarField_EngineTests.exe" "LunarField_VST3/build/demos"
+      - name: Upload demo audio
+        uses: actions/upload-artifact@v4
+        with:
+          name: LunarField-v0.3-Audio-Demos
+          path: LunarField_VST3/build/demos/*.wav
+          if-no-files-found: error
       - name: Build VST3
         run: cmake --build LunarField_VST3/build --config Release --target LunarField_VST3
       - name: Package VST3
