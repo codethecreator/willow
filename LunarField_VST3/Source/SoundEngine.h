@@ -43,13 +43,13 @@ struct Ring {
 struct Comb {
  Ring buf;float filtered=0,feedback=.74f,damp=.22f;
  void prepare(int n,float fb,float dp){buf.resize((size_t)n);feedback=fb;damp=dp;filtered=0;}
- float run(float input){float v=buf.read(1.f);filtered=lerp(v,filtered,damp);
+ float run(float input){float v=buf.read((float)buf.samples.size()-1.f);filtered=lerp(v,filtered,damp);
    buf.push(input+filtered*feedback);return v;}
 };
 struct Allpass {
  Ring buf;float gain=.5f;
  void prepare(int n){buf.resize((size_t)n);}
- float run(float x){float delayed=buf.read(1.f);float out=delayed-x*gain;buf.push(x+delayed*gain);return out;}
+ float run(float x){float delayed=buf.read((float)buf.samples.size()-1.f);float out=delayed-x*gain;buf.push(x+delayed*gain);return out;}
 };
 struct Reverb {
  std::array<std::array<Comb,4>,2> comb;
