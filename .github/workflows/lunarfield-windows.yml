@@ -1,0 +1,37 @@
+name: LunarField Windows VST3
+on:
+  push:
+    branches: [lunarfield-vst3-build]
+    paths:
+      - 'LunarField_VST3/**'
+      - '.github/workflows/lunarfield-windows.yml'
+  workflow_dispatch:
+jobs:
+  build-windows:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -S LunarField_VST3 -B LunarField_VST3/build -G "Visual Studio 17 2022" -A x64
+      - name: Build VST3
+        run: cmake --build LunarField_VST3/build --config Release --target LunarField_VST3
+      - name: Package VST3
+        uses: actions/upload-artifact@v4
+        with:
+          name: LunarField-VST3-Windows-x64
+          path: LunarField_VST3/build/LunarField_artefacts/Release/VST3/LunarField.vst3/
+          if-no-files-found: error
+      - name: Ensure Inno Setup
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) { choco install innosetup --no-progress -y }
+      - name: Build installer
+        shell: pwsh
+        run: |
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "LunarField_VST3\installer\LunarField.iss"
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: LunarField-Windows-Installer
+          path: LunarField_VST3/dist/LunarField-Setup-Windows-x64.exe
+          if-no-files-found: error
