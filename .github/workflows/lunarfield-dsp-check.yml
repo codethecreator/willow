@@ -1,0 +1,18 @@
+name: LunarField Fast DSP Regression
+on:
+  push:
+    branches: [lunarfield-vst3-build]
+    paths:
+      - 'LunarField_VST3/Source/SoundEngine.h'
+      - 'LunarField_VST3/Tests/EngineTests.cpp'
+      - '.github/workflows/lunarfield-dsp-check.yml'
+  workflow_dispatch:
+jobs:
+  dsp-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile original DSP engine tests
+        run: g++ -std=c++17 -O2 -DNDEBUG -Wall -Wextra -o /tmp/lunar_dsp_test LunarField_VST3/Tests/EngineTests.cpp
+      - name: Run long-session DSP regression tests
+        run: /tmp/lunar_dsp_test
