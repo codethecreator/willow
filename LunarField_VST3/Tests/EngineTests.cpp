@@ -106,6 +106,38 @@ int main(int argc,char** argv){
    if(i>48000/10&&i<48000)tail+=std::abs(y.l)+std::abs(y.r);
  }
  ensure(tail>.001,"reverb should create a persistent decaying tail");
+
+ // Both the chorus width and spatial room modes must generate a stereo field
+ // from an otherwise perfectly identical L/R signal.
+ for(int mode=0;mode<4;++mode){
+   Parameters wide;wide.aura=.92f;wide.auraFeel=(float)mode;
+   SoundEngine spatial;spatial.prepare(48000.f);spatial.resetParameters(wide);
+   double midPower=0,sidePower=0;
+   for(int i=0;i<48000*3;++i){
+     float x=.18f*std::sin(lunar::pi*2.f*211.f*i/48000.f)
+             +.16f*std::sin(lunar::pi*2.f*397.f*i/48000.f);
+     auto y=spatial.process({x,x},wide);
+     if(i>24000){
+       double m=.5*(y.l+y.r),s=.5*(y.l-y.r);
+       midPower+=m*m;sidePower+=s*s;
+     }
+   }
+   float ratio=std::sqrt(sidePower/(midPower+1.e-12));
+   std::printf("Aura stereo mode %d side/mid %.4f\n",mode,ratio);
+   ensure(ratio>.055,"Aura mode must produce true stereo width from mono");
+ }
+ {
+   Parameters spacious;spacious.dreamy=.90f;spacious.dreamyFeel=0.f;
+   SoundEngine s;s.prepare(48000.f);s.resetParameters(spacious);
+   double m=0,diff=0;
+   for(int i=0;i<48000*4;++i){
+     float x=i<24000?.24f*std::sin(lunar::pi*2.f*420.f*i/48000.f):0.f;
+     auto y=s.process({x,x},spacious);
+     if(i>24000){m+=std::pow(.5*(y.l+y.r),2);diff+=std::pow(.5*(y.l-y.r),2);}
+   }
+   ensure(diff>m*.003,"Reverb must create a stereo tail");
+ }
+
  if(argc>1){
    std::string dest=argv[1];
    Parameters dry;dry.mix=0;

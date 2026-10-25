@@ -13,19 +13,23 @@ constexpr std::array<const char*,10> names={
  "dreamy","dreamyFeel","mix","output"
 };
 // Factory settings are original to LunarField, not copies of Noctra presets.
-constexpr std::array<FactoryPreset,12> presets{{
- {"Soft Moonlight",       {{.32f,.2f,.07f,.1f,.43f,.2f,.40f,.15f,.88f,0.f}}},
+constexpr std::array<FactoryPreset,16> presets{{
+ {"Soft Moonlight",       {{.32f,.2f,.07f,.1f,.65f,.2f,.75f,.15f,.96f,-2.f}}},
  {"Worn Photograph",      {{.62f,1.12f,.09f,.23f,.22f,.0f,.19f,.17f,.86f,0.f}}},
- {"Wide Awake",           {{.10f,.0f,.03f,.0f,.78f,1.13f,.36f,.2f,.91f,0.f}}},
- {"Velvet Room",          {{.08f,.6f,.03f,.0f,.30f,.12f,.69f,.15f,.87f,0.f}}},
- {"Afterglow",            {{.29f,.0f,.12f,.3f,.54f,.35f,.53f,1.08f,.87f,0.f}}},
+ {"Wide Awake",           {{.10f,.0f,.03f,.0f,.89f,1.13f,.58f,.2f,.98f,-1.f}}},
+ {"Velvet Room",          {{.08f,.6f,.03f,.0f,.68f,.12f,.87f,.15f,.98f,-2.f}}},
+ {"Afterglow",            {{.29f,.0f,.12f,.3f,.73f,.35f,.79f,1.08f,.96f,-2.f}}},
  {"Ghost Transmission",   {{.54f,2.25f,.17f,2.2f,.18f,2.7f,.27f,3.f,.79f,-1.f}}},
  {"Tape Garden",          {{.54f,.15f,.24f,.0f,.39f,.12f,.20f,0.f,.90f,0.f}}},
  {"Tidal Glass",          {{.06f,0.f,.09f,.3f,.73f,.12f,.49f,1.0f,.89f,0.f}}},
  {"Fractured Signal",     {{.23f,2.2f,.49f,2.14f,.08f,0.f,.17f,0.f,.76f,-1.f}}},
- {"Horizon Echo",         {{.08f,0.f,.04f,0.f,.36f,1.f,.60f,2.f,.89f,0.f}}},
- {"Backwards Bloom",      {{.12f,.0f,.07f,0.f,.34f,.0f,.57f,3.f,.85f,0.f}}},
- {"Gentle Orbit",         {{.25f,.1f,.10f,0.f,.34f,2.f,.31f,0.f,.90f,0.f}}}
+ {"Horizon Echo",         {{.08f,0.f,.04f,0.f,.70f,1.f,.88f,2.f,.98f,-2.f}}},
+ {"Backwards Bloom",      {{.12f,.0f,.07f,0.f,.58f,.0f,.86f,3.f,.96f,-2.f}}},
+ {"Gentle Orbit",         {{.25f,.1f,.10f,0.f,.47f,2.f,.58f,0.f,.96f,-1.f}}},
+ {"Deep Orbit",           {{.20f,.4f,.08f,.1f,.80f,1.1f,.92f,.2f,.94f,-1.f}}},
+ {"Bright Regolith",      {{.07f,.1f,.12f,.0f,.88f,.0f,.82f,1.0f,.93f,-2.f}}},
+ {"Signal Collapse",      {{.56f,2.3f,.72f,2.3f,.33f,2.8f,.48f,2.7f,.96f,-3.f}}},
+ {"Cathedral Drift",      {{.14f,0.f,.03f,0.f,.74f,.2f,.90f,1.1f,.98f,-3.f}}}
 }};
 }
 
@@ -151,7 +155,7 @@ public:
        owner.applyPreset((size_t)id);
        factory.setSelectedId(id+1,juce::dontSendNotification);
      };
-     status.setText("12 CURATED STARTING POINTS  /  SMOOTH FEEL BLENDING",juce::dontSendNotification);
+     status.setText("16 CURATED STARTING POINTS  /  SMOOTH FEEL BLENDING",juce::dontSendNotification);
      status.setColour(juce::Label::textColourId,juce::Colour(0xff9baabe));
      status.setJustificationType(juce::Justification::centredRight);
      addAndMakeVisible(status);
@@ -184,7 +188,7 @@ public:
      g.drawText("MASTER MIX",50,409,116,25,juce::Justification::centred);
      g.drawText("OUTPUT dB",204,409,116,25,juce::Justification::centred);
      g.setColour(juce::Colour(0xff9caed0));g.setFont(12.f);
-     g.drawText("LUNARFIELD 0.3  /  ORIGINAL DSP",w-270,h-33,247,18,juce::Justification::centredRight);
+     g.drawText("LUNARFIELD 0.4  /  ORIGINAL DSP",w-270,h-33,247,18,juce::Justification::centredRight);
    }
    void resized()override{
      const auto w=getWidth(),h=getHeight();

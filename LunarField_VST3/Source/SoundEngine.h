@@ -59,20 +59,23 @@ struct Allpass {
 struct Reverb {
  std::array<std::array<Comb,4>,2> comb;
  std::array<std::array<Allpass,2>,2> aps;
+ std::array<float,2> crossState{};
  void prepare(float sr){
+   crossState={};
    constexpr int lengths[2][4]={{1557,1617,1491,1422},{1653,1723,1601,1511}};
    constexpr int all[2][2]={{225,556},{248,579}};
-   for(int c=0;c<2;++c){for(int i=0;i<4;++i)comb[(size_t)c][(size_t)i].prepare(std::max(32,(int)(lengths[c][i]*sr/44100.f)),.75f,.25f);
+   for(int c=0;c<2;++c){for(int i=0;i<4;++i)comb[(size_t)c][(size_t)i].prepare(std::max(32,(int)(lengths[c][i]*sr/44100.f)),.865f,.35f);
     for(int i=0;i<2;++i)aps[(size_t)c][(size_t)i].prepare(std::max(10,(int)(all[c][i]*sr/44100.f)));}
  }
  Stereo run(Stereo input){
    float ins[2]={input.l,input.r};float out[2]{};
    for(int c=0;c<2;++c){float s=0;
-    for(auto &combFilter:comb[(size_t)c])s+=combFilter.run(ins[c]*.20f);
-    s*=.36f;
+    for(auto &combFilter:comb[(size_t)c])s+=combFilter.run(ins[c]*.23f+crossState[(size_t)(1-c)]*.05f);
+    s*=.41f;
     for(auto &ap:aps[(size_t)c])s=ap.run(s);
     out[c]=s;
    }
+   crossState={out[0],out[1]};
    return {out[0],out[1]};
  }
 };
@@ -82,7 +85,7 @@ struct Parameters {
 class SoundEngine {
  float sr=48000.f,seconds=0.f,flutterPhase=0.f,lfo=0.f;
  uint32_t randState=0x98765431u;
- Ring tape[2],chorus[2],echo[2],pitch[2],reverse[2];
+ Ring tape[2],chorus[2],echo[2],pitch[2],reverse[2],early[2];
  std::array<OnePole,2> vintageLP,radioHP,sourceHF,noiseLP,airLP,echoHP,verbHP,revHP;
  std::array<OnePole,2> movingLP,postShatterLP,crushTone;
  Reverb verb;
@@ -125,60 +128,57 @@ class SoundEngine {
     if(c==0){result[0].l=tapeTone;result[1].l=delayed+hiss;result[2].l=highpass*.8f;result[3].l=worn*.65f+drift*.35f;}
     else{result[0].r=tapeTone;result[1].r=delayed+hiss;result[2].r=highpass*.8f;result[3].r=worn*.65f+drift*.35f;}
   }
-  return blendAmount(input,choose({result[0],result[1],result[2],result[3]},eased.memoryFeel),eased.memory,.73f);
+  return blendAmount(input,choose({result[0],result[1],result[2],result[3]},eased.memoryFeel),eased.memory,1.f);
  }
  Stereo shatter(Stereo input){
   float in[2]={input.l,input.r};Stereo modes[4]{};
   for(int c=0;c<2;++c){
-    float x=in[c];
-    // Band-limited pre-shaping + crude 2x integration smooths high harmonics.
-    float gentle=0,hard=0;
+    float x=in[c],warm=0,hard=0;
     for(int k=0;k<2;++k){
-      float t=lerp(previous[(size_t)c],x,(k+1)*.5f);
-      gentle+=std::tanh(t*2.1f)*(.5f/ std::tanh(2.1f));
-      hard+=std::tanh(t*5.5f)*(.5f/std::tanh(5.5f));
+      float v=lerp(previous[(size_t)c],x,(k+1)*.5f);
+      warm+=std::tanh(v*4.3f)*.35f;
+      hard+=std::tanh(v*10.5f)*.31f;
     }
-    float folded=std::sin(x*4.1f)*.73f;
-    float coarse=held[(size_t)c];
-    float radio=crushTone[(size_t)c].low(folded*.65f+hard*.25f,3200.f,sr);
-    float values[4]={gentle*.81f,hard*.72f,coarse*.85f,radio};
-    if(c==0){for(int i=0;i<4;++i)modes[i].l=values[i];}
-    else{for(int i=0;i<4;++i)modes[i].r=values[i];}
+    float bitcrush=held[(size_t)c]*.92f;
+    float fold=crushTone[(size_t)c].low(std::sin(x*7.4f)*.68f,6500.f,sr);
+    float values[4]={warm,hard,bitcrush,fold};
+    for(int i=0;i<4;++i){
+      if(c==0)modes[i].l=values[i];else modes[i].r=values[i];
+    }
     previous[(size_t)c]=x;
   }
-  crushCounter+=1.f;
-  if(crushCounter>=sr/9000.f){
+  if(++crushCounter>=sr/4400.f){
     crushCounter=0.f;
-    held[0]=std::round(input.l*32.f)/32.f;
-    held[1]=std::round(input.r*32.f)/32.f;
+    held[0]=std::round(input.l*13.f)/13.f;
+    held[1]=std::round(input.r*13.f)/13.f;
   }
-  auto processed=choose({modes[0],modes[1],modes[2],modes[3]},eased.shatterFeel);
-  Stereo shaped{
-    postShatterLP[0].low(processed.l,14000.f,sr),
-    postShatterLP[1].low(processed.r,14000.f,sr)
-  };
-  return blendAmount(input,shaped,eased.shatter,.80f);
+  Stereo processed=choose({modes[0],modes[1],modes[2],modes[3]},eased.shatterFeel);
+  Stereo shaped{postShatterLP[0].low(processed.l,11800.f,sr),
+                postShatterLP[1].low(processed.r,11800.f,sr)};
+  return blendAmount(input,shaped,eased.shatter,.96f);
  }
  Stereo aura(Stereo input){
-  float x[2]={input.l,input.r};
   Stereo chorusOut{},widthOut{},panOut{},filterOut{};
-  float mod=oscillator(.27f),sideMod=oscillator(.27f,.25f);
   float mid=(input.l+input.r)*.5f,side=(input.l-input.r)*.5f;
+  float panLfo=oscillator(.32f);
   for(int c=0;c<2;++c){
-    float delay=.019f+.005f*(c==0?mod:sideMod);
-    float voice=chorus[c].read(sr*delay);
-    chorus[c].push(x[c]);
-    float chorusSample=voice*.64f+x[c]*.36f;
-    float decorrelated=chorus[c].read(sr*(.012f+(c==0?.002f:-.002f)));
-    float wide=(c==0?mid+side*1.28f:mid-side*1.28f)+.16f*(decorrelated-x[c]);
-    float constantPan=(c==0?std::sqrt((1.f-mod*.55f)*.5f):std::sqrt((1.f+mod*.55f)*.5f))*1.28f;
-    float pan=x[c]*constantPan;
-    float cutoff=650.f+oscillator(.33f,c==0?0.f:.25f)*470.f+1100.f;
-    float moving=movingLP[(size_t)c].low(x[c],cutoff,sr);
-    if(c==0){chorusOut.l=chorusSample;widthOut.l=wide;panOut.l=pan;filterOut.l=moving;}
-    else {chorusOut.r=chorusSample;widthOut.r=wide;panOut.r=pan;filterOut.r=moving;}
+    const float x=c==0?input.l:input.r;
+    const float phase=c==0?0.f:.37f;
+    // Independent interpolated delay voices create genuine left/right decorrelation.
+    const float a=chorus[c].read(sr*(.014f+.0058f*oscillator(.37f,phase)));
+    const float b=chorus[c].read(sr*(.029f+.0072f*oscillator(.23f,phase+.29f)));
+    chorus[c].push(x);
+    float lush=x*.34f+a*.49f+b*.34f;
+    float thick=(c==0?mid+side*1.65f:mid-side*1.65f)*.57f+a*.48f-b*.27f;
+    float position=panLfo*.88f;
+    float gain=(c==0?std::sqrt((1.f-position)*.5f):std::sqrt((1.f+position)*.5f))*1.46f;
+    float pan=mid*gain+side*(c==0?.45f:-.45f);
+    float hz=700.f+1700.f*(.5f+.5f*oscillator(.47f,phase));
+    float moving=movingLP[(size_t)c].low(x,hz,sr)*.75f+(a-b)*.55f;
+    if(c==0){chorusOut.l=lush;widthOut.l=thick;panOut.l=pan;filterOut.l=moving;}
+    else{chorusOut.r=lush;widthOut.r=thick;panOut.r=pan;filterOut.r=moving;}
   }
-  return blendAmount(input,choose({chorusOut,widthOut,panOut,filterOut},eased.auraFeel),eased.aura,.75f);
+  return blendAmount(input,choose({chorusOut,widthOut,panOut,filterOut},eased.auraFeel),eased.aura,.98f);
  }
  float granularPitch(Ring &ring,float source,float phase){
    float n=sr*.092f;
@@ -203,35 +203,38 @@ class SoundEngine {
   return (a[0]*a[1]+b[0]*b[1])/(a[1]+b[1]+.00001f);
  }
  Stereo dreamy(Stereo source,Stereo clean){
-  // Feed the space stage a clean/tonal source: neither crackle nor bitcrush
-  // is written into the sustained reverb network.
-  Stereo feed=mix(source,clean,.58f);
+  Stereo feed=mix(source,clean,.42f);
   float x[2]={feed.l,feed.r};
   Stereo reverbInput{};
   for(int c=0;c<2;++c){
-    float hp=x[c]-verbHP[(size_t)c].low(x[c],c==0?215.f:240.f,sr);
-    if(c==0)reverbInput.l=hp;else reverbInput.r=hp;
+    float highpass=x[c]-verbHP[(size_t)c].low(x[c],c==0?160.f:180.f,sr);
+    if(c==0)reverbInput.l=highpass;else reverbInput.r=highpass;
   }
-  Stereo room=verb.run(reverbInput);
-  Stereo octave{};
-  octave.l=granularPitch(pitch[0],room.l,pitchPhase);
-  octave.r=granularPitch(pitch[1],room.r,pitchPhase);
-  float beat=60.f/bpm;
-  float dtime=beat*.75f;
+  // First reflections and a cross-fed late tail add space to centred mono sources.
+  float la=early[0].read(sr*.019f),lb=early[0].read(sr*.047f);
+  float ra=early[1].read(sr*.027f),rb=early[1].read(sr*.061f);
+  early[0].push(reverbInput.l);early[1].push(reverbInput.r);
+  Stereo reflection{la*.57f-rb*.23f,ra*.57f-lb*.23f};
+  Stereo late=verb.run(reverbInput+reflection*.23f);
+  Stereo room=late*1.9f+reflection*.28f;
+  Stereo octave{granularPitch(pitch[0],room.l,pitchPhase),
+                granularPitch(pitch[1],room.r,pitchPhase)};
   Stereo ping{};
+  float delaySeconds=(60.f/bpm)*.75f;
   for(int c=0;c<2;++c){
-    float delayed=echo[c].read(sr*dtime);
-    float smooth=echoHP[(size_t)c].low(delayed,5300.f,sr);
-    echoFB[(size_t)c]=smooth*.43f;
-    echo[c].push(reverbInput.l*(c==0?1.f:.0f)+reverbInput.r*(c==1?1.f:0.f)+echoFB[(size_t)(1-c)]);
-    if(c==0)ping.l=smooth;else ping.r=smooth;
+    float delayed=echo[c].read(sr*delaySeconds);
+    float softened=echoHP[(size_t)c].low(delayed,6100.f,sr);
+    echoFB[(size_t)c]=softened*.52f;
+    echo[c].push((c==0?reverbInput.l:reverbInput.r)+echoFB[(size_t)(1-c)]);
+    if(c==0)ping.l=softened;else ping.r=softened;
   }
-  Stereo rev{};
-  rev.l=reverseGrains(reverse[0],reverbInput.l,reversePhase);
-  rev.r=reverseGrains(reverse[1],reverbInput.r,reversePhase);
-  Stereo modes[4]={room*1.45f,room*.85f+octave*.7f,ping*.75f+room*.22f,rev*.56f+room*.65f};
-  auto effect=choose({modes[0],modes[1],modes[2],modes[3]},eased.dreamyFeel);
-  return source+effect*(smoothstep(eased.dreamy)*1.03f);
+  Stereo reversed{reverseGrains(reverse[0],reverbInput.l,reversePhase),
+                  reverseGrains(reverse[1],reverbInput.r,reversePhase)};
+  std::array<Stereo,4> modes={room*1.9f,
+    room*.90f+octave*1.80f,
+    ping*1.40f+room*.78f,
+    reversed*1.35f+room*.85f};
+  return source+choose(modes,eased.dreamyFeel)*(smoothstep(eased.dreamy)*1.18f);
  }
 public:
  void prepare(float sampleRate){
@@ -241,6 +244,7 @@ public:
      tape[c].resize((size_t)(sr*.1f));chorus[c].resize((size_t)(sr*.1f));
      echo[c].resize((size_t)(sr*3.f));pitch[c].resize((size_t)(sr*.5f));
      reverse[c].resize((size_t)(sr*1.f));
+     early[c].resize((size_t)(sr*.12f));
    }
    verb.prepare(sr);
    for(auto& a:{&vintageLP,&radioHP,&sourceHF,&noiseLP,&airLP,&echoHP,&verbHP,&revHP,&movingLP,&postShatterLP,&crushTone})
