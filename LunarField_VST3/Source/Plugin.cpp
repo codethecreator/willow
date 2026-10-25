@@ -8,9 +8,9 @@ struct FactoryPreset {
  const char* name;
  std::array<float,10> values;
 };
-constexpr std::array<const char*,10> names={
+constexpr std::array<const char*,12> names={
  "memory","memoryFeel","shatter","shatterFeel","aura","auraFeel",
- "dreamy","dreamyFeel","mix","output"
+ "dreamy","dreamyFeel","mix","output","wobble","wobbleRate"
 };
 // Factory settings are original to LunarField, not copies of Noctra presets.
 constexpr std::array<FactoryPreset,16> presets{{
@@ -38,10 +38,10 @@ public:
  juce::AudioProcessorValueTreeState state;
  static juce::AudioProcessorValueTreeState::ParameterLayout createParameters(){
    juce::AudioProcessorValueTreeState::ParameterLayout layout;
-   for (int i=0;i<10;++i){
+   for (int i=0;i<12;++i){
      float max=(i<8 && i%2==1)?3.f:(i==9?12.f:1.f);
      float min=i==9?-12.f:0.f;
-     float def=i==8?1.f:0.f;
+     float def=i==8?1.f:(i==10?.60f:(i==11?.45f:0.f));
      layout.add(std::make_unique<juce::AudioParameterFloat>(
         juce::ParameterID{names[(size_t)i],1},juce::String(names[(size_t)i]),
         juce::NormalisableRange<float>(min,max),def));
@@ -75,6 +75,7 @@ public:
    p.aura=get("aura");p.auraFeel=get("auraFeel");
    p.dreamy=get("dreamy");p.dreamyFeel=get("dreamyFeel");
    p.mix=get("mix");p.output=get("output");
+   p.wobble=get("wobble");p.wobbleRate=get("wobbleRate");
    return p;
  }
  float get(const char* name)const{return state.getRawParameterValue(name)->load();}
@@ -113,15 +114,15 @@ public:
  }
  void applyPreset(size_t id){
    if(id>=presets.size())return;
-   for(size_t i=0;i<names.size();++i){
+   for(size_t i=0;i<presets[id].values.size();++i){
      auto* param=state.getParameter(names[i]);
      if(param) param->setValueNotifyingHost(param->convertTo0to1(presets[id].values[i]));
    }
  }
  class Editor final : public juce::AudioProcessorEditor {
    LunarFieldProcessor& owner;
-   std::array<juce::Slider,10> controls;
-   std::array<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>,10> attached;
+   std::array<juce::Slider,12> controls;
+   std::array<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>,12> attached;
    juce::ComboBox factory;
    juce::TextButton surprise{"INSPIRE ME"};
    juce::Label status;
@@ -187,8 +188,10 @@ public:
      g.setColour(juce::Colour(0xffdbe8ff));g.setFont(13.f);
      g.drawText("MASTER MIX",50,409,116,25,juce::Justification::centred);
      g.drawText("OUTPUT dB",204,409,116,25,juce::Justification::centred);
+     g.drawText("WOW DEPTH",360,409,116,25,juce::Justification::centred);
+     g.drawText("WOW SPEED",505,409,116,25,juce::Justification::centred);
      g.setColour(juce::Colour(0xff9caed0));g.setFont(12.f);
-     g.drawText("LUNARFIELD 0.4  /  ORIGINAL DSP",w-270,h-33,247,18,juce::Justification::centredRight);
+     g.drawText("LUNARFIELD 0.5  /  TAPE TRANSPORT + DSP SAFETY",w-270,h-33,247,18,juce::Justification::centredRight);
    }
    void resized()override{
      const auto w=getWidth(),h=getHeight();
@@ -201,6 +204,8 @@ public:
      }
      controls[8].setBounds(57,435,100,105);
      controls[9].setBounds(212,435,100,105);
+     controls[10].setBounds(369,435,100,105);
+     controls[11].setBounds(514,435,100,105);
      factory.setBounds(w-486,34,215,34);
      surprise.setBounds(w-249,34,208,34);
      status.setBounds(w-490,h-67,465,25);

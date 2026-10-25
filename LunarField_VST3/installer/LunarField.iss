@@ -1,5 +1,5 @@
 #define MyAppName "LunarField"
-#define MyAppVersion "0.4.0"
+#define MyAppVersion "0.5.0"
 [Setup]
 AppId={{BD99DBFA-0BC1-4B47-B6A1-32CFE0E08642}
 AppName={#MyAppName}

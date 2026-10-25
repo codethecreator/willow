@@ -8,7 +8,11 @@
 namespace lunar {
 constexpr float pi=3.14159265358979323846f;
 inline float clamp(float x,float lo,float hi){return std::max(lo,std::min(hi,x));}
+inline float finiteSample(float x,float maximum=16.f){
+ return std::isfinite(x)?clamp(x,-maximum,maximum):0.f;
+}
 inline float softGuard(float x){
+ if(!std::isfinite(x))return 0.f;
  float a=std::abs(x);
  if(a<=1.f)return x;
  float y=1.f+.5f*(1.f-std::exp(-2.f*(a-1.f)));
@@ -25,36 +29,49 @@ inline Stereo choose(const std::array<Stereo,4>& modes,float position){
  float t=smoothstep(position-(float)a);return mix(modes[(size_t)a],modes[(size_t)a+1],t);
 }
 struct OnePole {
- float state=0;
- float low(float x,float hz,float sr){
-   float coeff=1.f-std::exp(-2.f*pi*clamp(hz,1.f,sr*.48f)/sr);
-   state+=(x-state)*coeff;return state;
+ float state=0,cachedHz=-1.f,cachedSr=-1.f,cachedCoeff=.1f;
+ float low(float signal,float hz,float sr){
+   float x=finiteSample(signal);
+   if(!std::isfinite(state))state=0;
+   if(!std::isfinite(hz))hz=1000.f;
+   if(hz!=cachedHz || sr!=cachedSr){
+     cachedHz=hz;cachedSr=sr;
+     cachedCoeff=1.f-std::exp(-2.f*pi*clamp(hz,1.f,sr*.48f)/sr);
+   }
+   state=finiteSample(state+(x-state)*cachedCoeff);
+   return state;
  }
- void reset(){state=0;}
+ void reset(){state=0;cachedHz=-1.f;}
 };
 struct Ring {
  std::vector<float> samples;size_t write=0;
  void resize(size_t n){samples.assign(std::max((size_t)8,n),0.f);write=0;}
- void push(float v){samples[write]=v;write=(write+1)%samples.size();}
+ // Keep nonfinite or runaway feedback from poisoning the entire delay buffer.
+ void push(float v){samples[write]=finiteSample(v,8.f);write=(write+1)%samples.size();}
  float read(float samplesBack)const{
-   if(samples.empty())return 0;
+   if(samples.empty()||!std::isfinite(samplesBack))return 0.f;
    float off=clamp(samplesBack,1.f,(float)samples.size()-2.f);
-   float pos=float(write)-off;while(pos<0)pos+=(float)samples.size();
-   int i=(int)pos;float fraction=pos-(float)i;
-   float a=samples[(size_t)i%samples.size()],b=samples[((size_t)i+1)%samples.size()];
-   return lerp(a,b,fraction);
+   float pos=float(write)-off;
+   if(pos<0)pos+=(float)samples.size();
+   size_t i=(size_t)pos;
+   float fraction=pos-(float)i;
+   float a=finiteSample(samples[i%samples.size()],8.f);
+   float b=finiteSample(samples[(i+1)%samples.size()],8.f);
+   return finiteSample(lerp(a,b,fraction),8.f);
  }
 };
 struct Comb {
  Ring buf;float filtered=0,feedback=.74f,damp=.22f;
  void prepare(int n,float fb,float dp){buf.resize((size_t)n);feedback=fb;damp=dp;filtered=0;}
- float run(float input){float v=buf.read((float)buf.samples.size()-1.f);filtered=lerp(v,filtered,damp);
-   buf.push(input+filtered*feedback);return v;}
+ float run(float input){float v=buf.read((float)buf.samples.size()-1.f);
+   filtered=finiteSample(lerp(v,filtered,damp),8.f);
+   buf.push(finiteSample(input+filtered*feedback,8.f));return v;}
 };
 struct Allpass {
  Ring buf;float gain=.5f;
  void prepare(int n){buf.resize((size_t)n);}
- float run(float x){float delayed=buf.read((float)buf.samples.size()-1.f);float out=delayed-x*gain;buf.push(x+delayed*gain);return out;}
+ float run(float x){x=finiteSample(x,8.f);float delayed=buf.read((float)buf.samples.size()-1.f);
+ float out=finiteSample(delayed-x*gain,8.f);buf.push(finiteSample(x+delayed*gain,8.f));return out;}
 };
 struct Reverb {
  std::array<std::array<Comb,4>,2> comb;
@@ -75,15 +92,17 @@ struct Reverb {
     for(auto &ap:aps[(size_t)c])s=ap.run(s);
     out[c]=s;
    }
-   crossState={out[0],out[1]};
-   return {out[0],out[1]};
+   crossState={finiteSample(out[0],8.f),finiteSample(out[1],8.f)};
+   return {crossState[0],crossState[1]};
  }
 };
 struct Parameters {
  float memory=0,memoryFeel=0,shatter=0,shatterFeel=0,aura=0,auraFeel=0,dreamy=0,dreamyFeel=0,mix=1,output=0;
+ float wobble=.60f,wobbleRate=.45f;
 };
 class SoundEngine {
  float sr=48000.f,seconds=0.f,flutterPhase=0.f,lfo=0.f;
+ float transportDrift=0.f;
  uint32_t randState=0x98765431u;
  Ring tape[2],chorus[2],echo[2],pitch[2],reverse[2],early[2];
  std::array<OnePole,2> vintageLP,radioHP,sourceHF,noiseLP,airLP,echoHP,verbHP,revHP;
@@ -97,23 +116,45 @@ class SoundEngine {
  float random(){randState^=randState<<13;randState^=randState>>17;randState^=randState<<5;
    return ((float)(randState&0xffffff)/8388608.f)-1.f;}
  float oscillator(float hz,float phaseOffset=0.f)const{return std::sin(2.f*pi*(seconds*hz+phaseOffset));}
+ static float safeParam(float x,float lo,float hi,float fallback){return std::isfinite(x)?clamp(x,lo,hi):fallback;}
  static Stereo blendAmount(Stereo dry,Stereo wet,float amount,float maxWet=1.f){
    return mix(dry,wet,smoothstep(clamp(amount,0.f,1.f))*maxWet);
  }
  void interpolateParameters(const Parameters& p){
   float a=1.f-std::exp(-1.f/(.028f*sr));
-  eased.memory=lerp(eased.memory,p.memory,a);eased.memoryFeel=lerp(eased.memoryFeel,p.memoryFeel,a);
-  eased.shatter=lerp(eased.shatter,p.shatter,a);eased.shatterFeel=lerp(eased.shatterFeel,p.shatterFeel,a);
-  eased.aura=lerp(eased.aura,p.aura,a);eased.auraFeel=lerp(eased.auraFeel,p.auraFeel,a);
-  eased.dreamy=lerp(eased.dreamy,p.dreamy,a);eased.dreamyFeel=lerp(eased.dreamyFeel,p.dreamyFeel,a);
-  eased.mix=lerp(eased.mix,p.mix,a);eased.output=lerp(eased.output,p.output,a);
+  auto approach=[a](float& smoothed,float value,float lo,float hi,float fallback){
+    if(!std::isfinite(smoothed))smoothed=fallback;
+    float target=safeParam(value,lo,hi,fallback);
+    smoothed=lerp(smoothed,target,a);
+  };
+  approach(eased.memory,p.memory,0,1,0);
+  approach(eased.memoryFeel,p.memoryFeel,0,3,0);
+  approach(eased.shatter,p.shatter,0,1,0);
+  approach(eased.shatterFeel,p.shatterFeel,0,3,0);
+  approach(eased.aura,p.aura,0,1,0);
+  approach(eased.auraFeel,p.auraFeel,0,3,0);
+  approach(eased.dreamy,p.dreamy,0,1,0);
+  approach(eased.dreamyFeel,p.dreamyFeel,0,3,0);
+  approach(eased.mix,p.mix,0,1,1);
+  approach(eased.output,p.output,-12,12,0);
+  approach(eased.wobble,p.wobble,0,1,.60f);
+  approach(eased.wobbleRate,p.wobbleRate,0,1,.45f);
  }
  Stereo memory(Stereo input) {
   const float x[2]={input.l,input.r};Stereo result[4]{};
-  float wow=.0011f*oscillator(.42f)+.00028f*oscillator(1.19f);
-  float flutter=.00023f*oscillator(6.13f);
+  // Reel transport modelling: variable read-head displacement produces
+  // actual pitch instability instead of simply filtering the signal.
+  // The nonlinear depth mapping preserves subtle settings and enables
+  // dramatic warble when the depth dial is pushed.
+  const float depth=smoothstep(eased.wobble);
+  const float speed=.22f+1.40f*eased.wobbleRate;
+  const float wow=(.0002f+.0057f*depth)*oscillator(speed)
+                 +(.00013f+.0023f*depth)*oscillator(speed*.53f,.17f);
+  const float flutter=(.00006f+.00070f*depth)*oscillator(5.6f+6.f*eased.wobbleRate,.29f)
+                     +(.00003f+.00024f*depth)*oscillator(11.8f+3.f*eased.wobbleRate,.71f);
+  const float wowOffset=wow+flutter+transportDrift*(.0012f*depth);
   for(int c=0;c<2;++c){
-    float delayed=tape[c].read(sr*(.020f+wow+flutter));
+    float delayed=tape[c].read(sr*(.023f+wowOffset));
     tape[c].push(x[c]);
     // Tape saturation and hiss: noise is deliberately tied to the source's high-band content.
     float low=vintageLP[(size_t)c].low(delayed,5600.f,sr);
@@ -124,9 +165,9 @@ class SoundEngine {
     float aged=airLP[(size_t)c].low(delayed,3700.f,sr);
     float highpass=x[c]-radioHP[(size_t)c].low(x[c],260.f,sr);
     float worn=std::tanh(aged*1.38f)*.81f;
-    float drift=tape[c].read(sr*(.020f+.0021f*oscillator(.23f,.15f)+flutter*.35f));
-    if(c==0){result[0].l=tapeTone;result[1].l=delayed+hiss;result[2].l=highpass*.8f;result[3].l=worn*.65f+drift*.35f;}
-    else{result[0].r=tapeTone;result[1].r=delayed+hiss;result[2].r=highpass*.8f;result[3].r=worn*.65f+drift*.35f;}
+    float drift=tape[c].read(sr*(.023f+wowOffset*1.75f+.0011f*depth*oscillator(.32f,.15f)));
+    if(c==0){result[0].l=tapeTone;result[1].l=delayed+hiss;result[2].l=highpass*.8f;result[3].l=worn*.32f+drift*.68f;}
+    else{result[0].r=tapeTone;result[1].r=delayed+hiss;result[2].r=highpass*.8f;result[3].r=worn*.32f+drift*.68f;}
   }
   return blendAmount(input,choose({result[0],result[1],result[2],result[3]},eased.memoryFeel),eased.memory,1.f);
  }
@@ -238,7 +279,8 @@ class SoundEngine {
  }
 public:
  void prepare(float sampleRate){
-   sr=clamp(sampleRate,8000.f,192000.f);seconds=0;flutterPhase=0;lfo=0;
+   sr=std::isfinite(sampleRate)?clamp(sampleRate,8000.f,192000.f):48000.f;
+   seconds=0;flutterPhase=0;lfo=0;transportDrift=0;
    bpm=120;pitchPhase=0;reversePhase=0;crushCounter=0;randState=0x98765431u;
    for(int c=0;c<2;++c){
      tape[c].resize((size_t)(sr*.1f));chorus[c].resize((size_t)(sr*.1f));
@@ -252,20 +294,35 @@ public:
    previous={};held={};analogNoise={};echoFB={};
    eased={};eased.mix=1.f;
  }
- void setBpm(float value){bpm=clamp(value,35.f,240.f);}
- void resetParameters(const Parameters& p){eased=p;}
+ void setBpm(float value){bpm=std::isfinite(value)?clamp(value,35.f,240.f):120.f;}
+ void resetParameters(const Parameters& p){eased=p;
+  eased.memory=safeParam(eased.memory,0,1,0);eased.memoryFeel=safeParam(eased.memoryFeel,0,3,0);
+  eased.shatter=safeParam(eased.shatter,0,1,0);eased.shatterFeel=safeParam(eased.shatterFeel,0,3,0);
+  eased.aura=safeParam(eased.aura,0,1,0);eased.auraFeel=safeParam(eased.auraFeel,0,3,0);
+  eased.dreamy=safeParam(eased.dreamy,0,1,0);eased.dreamyFeel=safeParam(eased.dreamyFeel,0,3,0);
+  eased.mix=safeParam(eased.mix,0,1,1);eased.output=safeParam(eased.output,-12,12,0);
+  eased.wobble=safeParam(eased.wobble,0,1,.60f);eased.wobbleRate=safeParam(eased.wobbleRate,0,1,.45f);
+ }
  Stereo process(Stereo in,const Parameters& p){
    interpolateParameters(p);
-   Stereo clean=in;
-   Stereo tonal=memory(in);
+   Stereo clean{finiteSample(in.l,8.f),finiteSample(in.r,8.f)};
+   // Maintain finite values at every processor boundary so preset changes
+   // cannot contaminate the downstream delay/reverb feedback networks.
+   Stereo tonal=memory(clean);
+   tonal={finiteSample(tonal.l,8.f),finiteSample(tonal.r,8.f)};
    tonal=shatter(tonal);
+   tonal={finiteSample(tonal.l,8.f),finiteSample(tonal.r,8.f)};
    tonal=aura(tonal);
+   tonal={finiteSample(tonal.l,8.f),finiteSample(tonal.r,8.f)};
    Stereo wet=dreamy(tonal,clean);
+   wet={finiteSample(wet.l,8.f),finiteSample(wet.r,8.f)};
    Stereo out=mix(clean,wet,clamp(eased.mix,0.f,1.f))*db(eased.output);
    // Harsh input spikes are restrained, while regular programme levels remain transparent.
    out.l=softGuard(out.l);
    out.r=softGuard(out.r);
    seconds+=1.f/sr;if(seconds>10000.f)seconds-=10000.f;
+   // Slowly varying stochastic mechanical drift: bounded, not white-noise jitter.
+   transportDrift=clamp(transportDrift*.99998f+random()*.0009f,-1.f,1.f);
    pitchPhase+=1.f/(sr*.092f);if(pitchPhase>=1.f)pitchPhase-=1.f;
    reversePhase+=1.f/(sr*.22f);if(reversePhase>=1.f)reversePhase-=1.f;
    return out;
