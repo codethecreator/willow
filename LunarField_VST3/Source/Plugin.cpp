@@ -8,7 +8,7 @@ public:
   static juce::AudioProcessorValueTreeState::ParameterLayout layout(){
     juce::AudioProcessorValueTreeState::ParameterLayout l;
     for (auto id: {"memory","shatter","aura","dreamy","mix"})
-      l.add(std::make_unique<AP>(juce::ParameterID{id,1},id,juce::NormalisableRange<float>(0.f,1.f),id==juce::String("mix")?1.f:0.f));
+      l.add(std::make_unique<AP>(juce::ParameterID{id,1},id,juce::NormalisableRange<float>(0.f,1.f),juce::String(id)=="mix"?1.f:0.f));
     for (auto id: {"memoryFeel","shatterFeel","auraFeel","dreamyFeel"})
       l.add(std::make_unique<AP>(juce::ParameterID{id,1},id,juce::NormalisableRange<float>(0.f,3.f),0.f));
     l.add(std::make_unique<AP>(juce::ParameterID{"output",1},"Output dB",juce::NormalisableRange<float>(-12.f,12.f),0.f));
@@ -81,8 +81,8 @@ public:
       index=(index+1)%delay[0].size();
     }
   }
-  void getStateInformation(juce::MemoryBlock& mb)override {if(auto x=apvts.copyState().createXml())juce::copyXmlToBinary(*x,mb);}
-  void setStateInformation(const void* d,int n)override {if(auto x=juce::getXmlFromBinary(d,n))apvts.replaceState(juce::ValueTree::fromXml(*x));}
+  void getStateInformation(juce::MemoryBlock& mb)override {juce::MemoryOutputStream stream(mb,true);apvts.copyState().writeToStream(stream);}
+  void setStateInformation(const void* d,int n)override {auto state=juce::ValueTree::readFromData(d,(size_t)n);if(state.isValid())apvts.replaceState(state);}
   class Editor final:public juce::AudioProcessorEditor {
     LunarField& plugin;
     std::array<juce::Slider,10> sliders;
