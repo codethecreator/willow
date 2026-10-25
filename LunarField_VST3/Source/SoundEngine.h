@@ -96,18 +96,23 @@ struct Reverb {
    crossState={};
    constexpr int lengths[2][4]={{1557,1617,1491,1422},{1653,1723,1601,1511}};
    constexpr int all[2][2]={{225,556},{248,579}};
-   for(int c=0;c<2;++c){for(int i=0;i<4;++i)comb[(size_t)c][(size_t)i].prepare(std::max(32,(int)(lengths[c][i]*sr/44100.f)),.865f,.35f);
+   for(int c=0;c<2;++c){for(int i=0;i<4;++i)comb[(size_t)c][(size_t)i].prepare(std::max(32,(int)(lengths[c][i]*sr/44100.f)),.86f,.36f);
     for(int i=0;i<2;++i)aps[(size_t)c][(size_t)i].prepare(std::max(10,(int)(all[c][i]*sr/44100.f)));}
  }
  Stereo run(Stereo input){
    float ins[2]={input.l,input.r};float out[2]{};
    for(int c=0;c<2;++c){float s=0;
-    for(auto &combFilter:comb[(size_t)c])s+=combFilter.run(ins[c]*.23f+crossState[(size_t)(1-c)]*.05f);
-    s*=.41f;
+    // Gain-normalised diffusion: the previous 4-comb sum and
+    // cross-channel reinjection could drive a sustained signal up to
+    // the 1.5f softGuard ceiling. Reduce both feedback injection and
+    // the post-comb sum so the reverb remains stable and musical.
+    const float spatialFeed=ins[c]*.12f+crossState[(size_t)(1-c)]*.008f;
+    for(auto &combFilter:comb[(size_t)c])s+=combFilter.run(spatialFeed);
+    s*=.22f;
     for(auto &ap:aps[(size_t)c])s=ap.run(s);
     out[c]=s;
    }
-   crossState={finiteSample(out[0],8.f),finiteSample(out[1],8.f)};
+   crossState={finiteSample(out[0],2.f),finiteSample(out[1],2.f)};
    return {crossState[0],crossState[1]};
  }
 };

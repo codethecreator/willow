@@ -191,7 +191,7 @@ public:
      g.drawText("WOW DEPTH",360,409,116,25,juce::Justification::centred);
      g.drawText("WOW SPEED",505,409,116,25,juce::Justification::centred);
      g.setColour(juce::Colour(0xff9caed0));g.setFont(12.f);
-     g.drawText("LUNARFIELD 0.5.1  /  LONG-SESSION CLOCK FIX",w-270,h-33,247,18,juce::Justification::centredRight);
+     g.drawText("LUNARFIELD 0.5.2  /  FEEDBACK GAIN FIX",w-270,h-33,247,18,juce::Justification::centredRight);
    }
    void resized()override{
      const auto w=getWidth(),h=getHeight();

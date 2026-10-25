@@ -23,7 +23,7 @@ jobs:
       - name: Upload demo audio
         uses: actions/upload-artifact@v4
         with:
-          name: LunarField-v0.5.1-Audio-Demos
+          name: LunarField-v0.5.2-Audio-Demos
           path: LunarField_VST3/build/demos/*.wav
           if-no-files-found: error
       - name: Build host-level preset stress test

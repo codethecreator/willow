@@ -241,6 +241,8 @@ int main(int argc,char** argv){
     sustained.resetParameters(p);
     double minRms=1e9,maxRms=0;
     double rolling=0;int windows=0;
+    std::uint64_t hotSamples=0;
+    float maxPeak=0.f;
     const int samplesPerWindow=24000*5;
     for(int i=0;i<24000*120;++i){
        double t=double(i)/24000.;
@@ -250,6 +252,8 @@ int main(int argc,char** argv){
        ensure(std::isfinite(out.l)&&std::isfinite(out.r),"Long-run output must remain finite");
        double m=.5*(double(out.l)*out.l+double(out.r)*out.r);
        rolling+=m;
+       maxPeak=std::max(maxPeak,std::max(std::abs(out.l),std::abs(out.r)));
+       if(std::max(std::abs(out.l),std::abs(out.r))>1.05f)++hotSamples;
        if((i+1)%samplesPerWindow==0){
           double rms=std::sqrt(rolling/samplesPerWindow);
           if(i>samplesPerWindow*2){
@@ -259,8 +263,11 @@ int main(int argc,char** argv){
           rolling=0.;
        }
     }
-    std::printf("Long-run (120s) minRMS %.6f maxRMS %.6f windows %d\n",minRms,maxRms,windows);
-    ensure(minRms>.015&&minRms>maxRms*.15,"Fixed preset must not fade or disappear over time");
+    std::printf("Long-run (120s) minRMS %.6f maxRMS %.6f maxPeak %.5f hotSamples %llu windows %d\n",
+      minRms,maxRms,(double)maxPeak,(unsigned long long)hotSamples,windows);
+    ensure(minRms>.025&&minRms>maxRms*.2,"Fixed preset must not fade or disappear over time");
+    ensure(maxRms<.48&&maxPeak<1.45f,"Sustained FX signal must not build up into clipping/limiter ceiling");
+    ensure(hotSamples<24000u*120u/300u,"Sustained FX must not produce continuous limiter saturation");
  }
  if(argc>1){
    std::string dest=argv[1];
