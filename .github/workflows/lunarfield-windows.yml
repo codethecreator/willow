@@ -29,7 +29,9 @@ jobs:
       - name: Build host-level preset stress test
         run: cmake --build LunarField_VST3/build --config Release --target LunarField_HostSmoke
       - name: Run real plugin processor smoke test
-        run: .\\LunarField_VST3\\build\\Release\\LunarField_HostSmoke.exe
+        shell: pwsh
+        run: |
+          & "LunarField_VST3/build/LunarField_HostSmoke_artefacts/Release/LunarField_HostSmoke.exe"
       - name: Build VST3
         run: cmake --build LunarField_VST3/build --config Release --target LunarField_VST3
       - name: Package VST3
