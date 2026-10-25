@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
+#include <limits>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -138,6 +139,77 @@ int main(int argc,char** argv){
    ensure(diff>m*.003,"Reverb must create a stereo tail");
  }
 
+
+ // Tape transport must genuinely modulate pitch; merely changing tone is not
+ // sufficient. Compare measured zero-crossing period variation with depth off/on.
+ auto measurePeriodSpread=[](float depth){
+   SoundEngine tape;tape.prepare(48000.f);
+   Parameters p;p.memory=1.f;p.memoryFeel=0.f;
+   p.wobble=depth;p.wobbleRate=.55f;
+   tape.resetParameters(p);
+   float previousSample=0.f;double previousCross=-1.;
+   double shortest=1e9,longest=0;
+   for(int i=0;i<48000*6;++i){
+     float x=.24f*std::sin(2*lunar::pi*330.f*(float)i/48000.f);
+     float y=tape.process({x,x},p).l;
+     if(i>48000 && previousSample<0.f && y>=0.f){
+       double instant=(double)i-(double)previousSample/((double)y-(double)previousSample+1e-15);
+       if(previousCross>=0){
+         double period=instant-previousCross;
+         shortest=std::min(shortest,period);longest=std::max(longest,period);
+       }
+       previousCross=instant;
+     }
+     previousSample=y;
+   }
+   return (longest-shortest)/((shortest+longest)*.5);
+ };
+ double steady=measurePeriodSpread(0.f),warbling=measurePeriodSpread(1.f);
+ std::printf("Tape frequency spread steady=%.6f warbling=%.6f\n",steady,warbling);
+ ensure(warbling>steady+.008,"Tape depth must audibly change playback pitch");
+
+ // The host can send invalid samples or unexpected automation values.
+ // These must never poison reverb/tape buffers and remain stuck after bypass.
+ {
+  SoundEngine unsafe;unsafe.prepare(48000.f);
+  Parameters p;p.memory=.9f;p.aura=.9f;p.shatter=.8f;p.dreamy=.9f;
+  unsafe.resetParameters(p);
+  double lastSignal=0;
+  for(int i=0;i<48000*11;++i){
+    if(i%3311==0){
+      p.memory=(i/3311)%2?1.f:0.f;
+      p.memoryFeel=(float)((i/3311)%4);
+      p.shatter=(i/3311)%3?.9f:.03f;
+      p.shatterFeel=(float)((i/3311+1)%4);
+      p.aura=.97f;p.auraFeel=(float)((i/3311+2)%4);
+      p.dreamy=(i/3311)%3?.91f:.02f;
+      p.dreamyFeel=(float)((i/3311+3)%4);
+      p.wobble=((i/3311)%2)?1.f:.15f;
+      p.wobbleRate=((i/3311)%5)*.25f;
+    }
+    float x=.23f*std::sin(2*lunar::pi*223.f*(float)i/48000.f);
+    if(i%47999==0)x=std::numeric_limits<float>::quiet_NaN();
+    if(i%65001==0)x=std::numeric_limits<float>::infinity();
+    auto y=unsafe.process({x,x},p);
+    ensure(std::isfinite(y.l)&&std::isfinite(y.r),"Bad source or preset must not generate nonfinite output");
+    ensure(std::abs(y.l)<1.6f&&std::abs(y.r)<1.6f,"Output must remain bounded under extreme preset switching");
+    if(i>48000*10)lastSignal+=std::abs(y.l)+std::abs(y.r);
+  }
+  ensure(lastSignal>10.,"Output must recover and remain audible after switching presets");
+ }
+ // Some hosts can restore NaN/Inf from corrupted parameter automation/state.
+ {
+   SoundEngine hostile;hostile.prepare(48000.f);
+   Parameters p;p.memory=1.f;p.aura=1.f;p.dreamy=1.f;
+   hostile.resetParameters(p);
+   for(int i=0;i<48000;++i){
+     if(i==100)p.memoryFeel=std::numeric_limits<float>::quiet_NaN();
+     if(i==200)p.output=std::numeric_limits<float>::infinity();
+     auto out=hostile.process({.11f,.11f},p);
+     ensure(std::isfinite(out.l)&&std::isfinite(out.r),"Corrupt host parameters must not propagate NaN/Inf");
+   }
+ }
+
  if(argc>1){
    std::string dest=argv[1];
    Parameters dry;dry.mix=0;
@@ -149,5 +221,5 @@ int main(int argc,char** argv){
    renderWav(dest+"/03-Octave-Shimmer.wav",lush,48000);
    renderWav(dest+"/04-Fractured-Signal.wav",grunge,48000);
  }
- std::puts("PASS: engine stability, 16 modes, automation, reverb tail, and WAV renders.");
+ std::puts("PASS: engine stability, 16 modes, stereo, tape wow/flutter, rapid preset switching, recovery, and WAV renders.");
 }
