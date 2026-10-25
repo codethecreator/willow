@@ -28,6 +28,21 @@ inline Stereo choose(const std::array<Stereo,4>& modes,float position){
  position=clamp(position,0.f,3.f);int a=std::min(2,(int)position);
  float t=smoothstep(position-(float)a);return mix(modes[(size_t)a],modes[(size_t)a+1],t);
 }
+// Double-precision transport time via an integer sample counter.
+// Unlike the old float-seconds accumulator this does not stall after
+// a few minutes; even days-long sessions retain sample-accurate time.
+struct TransportClock {
+ std::uint64_t samplePosition=0;
+ double sampleRate=48000.;
+ void prepare(double rate){sampleRate=rate>0&&std::isfinite(rate)?rate:48000.;samplePosition=0;}
+ void advance(std::uint64_t frames=1){samplePosition+=frames;}
+ double seconds()const{return double(samplePosition)/sampleRate;}
+ float sine(float frequency,float phase=0.f)const{
+   double theta=6.283185307179586476925286766559 *
+      (seconds()*double(frequency)+double(phase));
+   return float(std::sin(theta));
+ }
+};
 struct OnePole {
  float state=0,cachedHz=-1.f,cachedSr=-1.f,cachedCoeff=.1f;
  float low(float signal,float hz,float sr){
@@ -101,7 +116,8 @@ struct Parameters {
  float wobble=.60f,wobbleRate=.45f;
 };
 class SoundEngine {
- float sr=48000.f,seconds=0.f,flutterPhase=0.f,lfo=0.f;
+ float sr=48000.f;
+ TransportClock clock;
  float transportDrift=0.f;
  uint32_t randState=0x98765431u;
  Ring tape[2],chorus[2],echo[2],pitch[2],reverse[2],early[2];
@@ -115,7 +131,7 @@ class SoundEngine {
  static float db(float d){return std::pow(10.f,d/20.f);}
  float random(){randState^=randState<<13;randState^=randState>>17;randState^=randState<<5;
    return ((float)(randState&0xffffff)/8388608.f)-1.f;}
- float oscillator(float hz,float phaseOffset=0.f)const{return std::sin(2.f*pi*(seconds*hz+phaseOffset));}
+ float oscillator(float hz,float phaseOffset=0.f)const{return clock.sine(hz,phaseOffset);}
  static float safeParam(float x,float lo,float hi,float fallback){return std::isfinite(x)?clamp(x,lo,hi):fallback;}
  static Stereo blendAmount(Stereo dry,Stereo wet,float amount,float maxWet=1.f){
    return mix(dry,wet,smoothstep(clamp(amount,0.f,1.f))*maxWet);
@@ -280,7 +296,7 @@ class SoundEngine {
 public:
  void prepare(float sampleRate){
    sr=std::isfinite(sampleRate)?clamp(sampleRate,8000.f,192000.f):48000.f;
-   seconds=0;flutterPhase=0;lfo=0;transportDrift=0;
+   clock.prepare(sr);transportDrift=0;
    bpm=120;pitchPhase=0;reversePhase=0;crushCounter=0;randState=0x98765431u;
    for(int c=0;c<2;++c){
      tape[c].resize((size_t)(sr*.1f));chorus[c].resize((size_t)(sr*.1f));
@@ -320,7 +336,7 @@ public:
    // Harsh input spikes are restrained, while regular programme levels remain transparent.
    out.l=softGuard(out.l);
    out.r=softGuard(out.r);
-   seconds+=1.f/sr;if(seconds>10000.f)seconds-=10000.f;
+   clock.advance();
    // Slowly varying stochastic mechanical drift: bounded, not white-noise jitter.
    transportDrift=clamp(transportDrift*.99998f+random()*.0009f,-1.f,1.f);
    pitchPhase+=1.f/(sr*.092f);if(pitchPhase>=1.f)pitchPhase-=1.f;

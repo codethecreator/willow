@@ -65,6 +65,27 @@ static void renderWav(const std::string& filename,Parameters p,int sr){
  }
 }
 int main(int argc,char** argv){
+ // Previous regression: a 32-bit float seconds accumulator would drift
+ // and eventually freeze, turning LFO modulation into a static phase.
+ // Verify sample clock continuously progresses even well beyond 8 minutes.
+ for(int rate:{44100,48000,96000}){
+   lunar::TransportClock clock;clock.prepare(double(rate));
+   const std::uint64_t seconds[]={0,60,180,300,480,720,1800,7200,86400};
+   for(std::uint64_t time:seconds){
+      clock.samplePosition=time*std::uint64_t(rate);
+      double before=clock.seconds();
+      float a=clock.sine(.43f,.13f);
+      clock.advance();
+      double after=clock.seconds();
+      float b=clock.sine(.43f,.13f);
+      ensure(after>before,"Transport clock must advance at all session lengths");
+      ensure(std::abs((after-before)-1.0/rate)<1e-9,"Transport clock must retain exact sample period");
+      ensure(std::isfinite(a)&&std::isfinite(b),"LFO must remain finite after a day's runtime");
+      ensure(std::abs(a-b)<.001,"LFO must remain continuous across frames");
+   }
+ }
+ std::puts("PASS: double-precision sample clock across 24 hours, 44.1/48/96 kHz.");
+
  for(int rate:{44100,48000,96000}){
    Parameters dry;dry.mix=0;
    auto m=evaluate(dry,rate,rate*2);
@@ -210,6 +231,37 @@ int main(int argc,char** argv){
    }
  }
 
+ // Long running audio stability: compare rolling RMS on a sustained
+ // source with multiple active effects, including reverb feedback.
+ {
+    lunar::SoundEngine sustained;sustained.prepare(24000.f);
+    lunar::Parameters p;p.memory=.68f;p.memoryFeel=0.f;p.wobble=.85f;
+    p.shatter=.20f;p.aura=.73f;p.auraFeel=.45f;
+    p.dreamy=.62f;p.dreamyFeel=.30f;p.mix=.96f;
+    sustained.resetParameters(p);
+    double minRms=1e9,maxRms=0;
+    double rolling=0;int windows=0;
+    const int samplesPerWindow=24000*5;
+    for(int i=0;i<24000*120;++i){
+       double t=double(i)/24000.;
+       float input=.15f*std::sin(6.283185307179586*220.*t)
+                  +.10f*std::sin(6.283185307179586*345.2*t);
+       auto out=sustained.process({input,input*.92f},p);
+       ensure(std::isfinite(out.l)&&std::isfinite(out.r),"Long-run output must remain finite");
+       double m=.5*(double(out.l)*out.l+double(out.r)*out.r);
+       rolling+=m;
+       if((i+1)%samplesPerWindow==0){
+          double rms=std::sqrt(rolling/samplesPerWindow);
+          if(i>samplesPerWindow*2){
+             minRms=std::min(minRms,rms);maxRms=std::max(maxRms,rms);
+             ++windows;
+          }
+          rolling=0.;
+       }
+    }
+    std::printf("Long-run (120s) minRMS %.6f maxRMS %.6f windows %d\n",minRms,maxRms,windows);
+    ensure(minRms>.015&&minRms>maxRms*.15,"Fixed preset must not fade or disappear over time");
+ }
  if(argc>1){
    std::string dest=argv[1];
    Parameters dry;dry.mix=0;
