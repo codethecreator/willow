@@ -1,0 +1,14 @@
+name: Probe Noctra Public Audio Demos
+on:
+  workflow_dispatch:
+  push:
+    branches: [lunarfield-vst3-build]
+    paths:
+      - 'LunarField_VST3/Tools/probe_reference.py'
+      - '.github/workflows/noctra-demo-probe.yml'
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 LunarField_VST3/Tools/probe_reference.py
