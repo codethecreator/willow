@@ -8,7 +8,12 @@
 namespace lunar {
 constexpr float pi=3.14159265358979323846f;
 inline float clamp(float x,float lo,float hi){return std::max(lo,std::min(hi,x));}
-inline float sat(float x){return x/(1.f+std::abs(x)*.32f);}
+inline float softGuard(float x){
+ float a=std::abs(x);
+ if(a<=1.f)return x;
+ float y=1.f+.5f*(1.f-std::exp(-2.f*(a-1.f)));
+ return std::copysign(y,x);
+}
 inline float lerp(float a,float b,float t){return a+(b-a)*t;}
 inline float smoothstep(float x){x=clamp(x,0.f,1.f);return x*x*(3.f-2.f*x);}
 struct Stereo {float l=0,r=0; Stereo operator+(Stereo b)const{return {l+b.l,r+b.r};}
@@ -254,8 +259,8 @@ public:
    Stereo wet=dreamy(tonal,clean);
    Stereo out=mix(clean,wet,clamp(eased.mix,0.f,1.f))*db(eased.output);
    // Harsh input spikes are restrained, while regular programme levels remain transparent.
-   out.l=(std::abs(out.l)>1.4f)?sat(out.l):out.l;
-   out.r=(std::abs(out.r)>1.4f)?sat(out.r):out.r;
+   out.l=softGuard(out.l);
+   out.r=softGuard(out.r);
    seconds+=1.f/sr;if(seconds>10000.f)seconds-=10000.f;
    pitchPhase+=1.f/(sr*.092f);if(pitchPhase>=1.f)pitchPhase-=1.f;
    reversePhase+=1.f/(sr*.22f);if(reversePhase>=1.f)reversePhase-=1.f;
