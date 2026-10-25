@@ -30,7 +30,8 @@ enable_testing()
 add_test(NAME LunarFieldDspTest COMMAND LunarField_EngineTests)
 
 # Exercise the real JUCE processor API during aggressive preset changes.
-add_executable(LunarField_HostSmoke Tests/HostSmoke.cpp Source/Plugin.cpp)
+juce_add_console_app(LunarField_HostSmoke PRODUCT_NAME "LunarField HostSmoke")
+target_sources(LunarField_HostSmoke PRIVATE Tests/HostSmoke.cpp Source/Plugin.cpp)
 juce_generate_juce_header(LunarField_HostSmoke)
 target_compile_definitions(LunarField_HostSmoke PUBLIC JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
 target_link_libraries(LunarField_HostSmoke PRIVATE juce::juce_audio_utils juce::juce_dsp PUBLIC juce::juce_recommended_config_flags juce::juce_recommended_warning_flags)
