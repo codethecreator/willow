@@ -1,0 +1,19 @@
+name: Analyse Noctra Public Reference Audio
+on:
+  push:
+    branches: [lunarfield-vst3-build]
+    paths:
+      - 'LunarField_VST3/Tools/analyse_references.py'
+      - '.github/workflows/noctra-reference-analysis.yml'
+  workflow_dispatch:
+jobs:
+  reference-metrics:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Ensure ffmpeg and NumPy
+        run: |
+          ffmpeg -version | head -n 1
+          python3 -m pip install --user numpy
+      - name: Compare dry/wet examples
+        run: python3 LunarField_VST3/Tools/analyse_references.py
